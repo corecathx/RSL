@@ -8,6 +8,7 @@ class Interp {
     public var content:String = "";
     public var variables:Map<String, Dynamic> = [];
     public var error:Bool = false;
+    var insideFunction:Bool = false;
 
     /**
      * Initialize a new Interp instance.
@@ -27,7 +28,7 @@ class Interp {
      * Execute a RSL script.
      * @param path Path to the file.
      */
-    public function execute(path:String):Void {
+     public function execute(path:String):Void {
         if (!FileSystem.exists(path)) {
             Sys.println("File not found: " + (Sys.getCwd() + path));
             return;
@@ -37,30 +38,41 @@ class Interp {
             Sys.println((Sys.getCwd() + path) + " is a directory. ");
             return;
         }
+
         error = false;
-        var _file:String = File.getContent(path).trim();
-        Log.debug(_file);
+        var _file:String = File.getContent(path);
         for (index=>line in _file.split('\n')) {
             if (error) 
                 break;
-            line = line.trim();
+
             var commentIndex:Int = line.indexOf("#");
             if (commentIndex != -1)
                 line = line.substring(0, commentIndex).trim(); 
-    
+
             if (line == "") 
                 continue;
+
+            // Only check indentation if not inside a function body
+            if (!insideFunction && Utils.getIndentLevel(line) > 0) {
+                Log.error({
+                    line: index + 1, 
+                    message: "Unexpected indentation"
+                });
+                return;
+            }
 
             if (line.startsWith("declare")) { // a variable.
                 handleDeclare(line, index);
             } else if (line.startsWith("output")) { // output, like print
                 handleOutput(line, index);
-            } else if (line.startsWith("#")){ // comment
+            } else if (line.startsWith("func")) {
+                handleFunction(line, _file.split('\n'), index);
+            } else if (line.startsWith("#")) { // comment
                 // we found a comment!
-            } else if (line != "") { // anything, we call it invalid
+            } else if (line.trim() != "") { // anything, we call it invalid
                 line = line.trim();
                 Log.error({
-                    line: index+1, 
+                    line: index + 1, 
                     message: line.split(" ")[0] + " is invalid"
                 }); 
                 break;
@@ -82,12 +94,7 @@ class Interp {
                 field = field.substring(0, field.length-1);
                 try {
                     if (!Reflect.hasField(variables.get(match[0]), field)) {
-                        Log.error({
-                            line: index+1, 
-                            message: "Unknown field \""+m+"\""
-                        });
-                        error = true;
-                        return string;
+                        //string = string.replace(m, "null");
                     } else {
                         string = string.replace(m, Std.string(Reflect.getProperty(variables.get(match[0]), field)));
                     }
@@ -100,10 +107,9 @@ class Interp {
                     error = true;
                     return string;
                 }
-            } else {
-                string = string.replace("$" + key, Std.string(variables.get(key)));
             }
-
+        
+            string = string.replace("$" + key, Std.string(variables.get(key)));
         }
         return string;
     }
@@ -189,5 +195,69 @@ class Interp {
             line: index+1,
             message: parsed
         });
+    }
+
+    function handleFunction(line:String, lines:Array<String>, index:Int) {
+        var lineSplit:Array<String> = line.replace("func", "").trim().split(" ");
+        if (lineSplit.length > 1) {
+            Log.error({
+                line: index + 1, 
+                message: "Malformed function syntax"
+            });
+            error = true;
+            return;
+        } else {
+            var firstParent:Int = line.trim().indexOf("(");
+            var lastParent:Int = line.trim().lastIndexOf(")");
+            var endsWithColon:Bool = line.trim().endsWith(":");
+
+            if (firstParent == -1 || lastParent == -1) {
+                Log.error({
+                    line: index + 1, 
+                    message: "Malformed function syntax"
+                });
+                error = true;
+                return;
+            } else if (!endsWithColon) {
+                Log.error({
+                    line: index + 1, 
+                    message: "Missing \":\""
+                });
+                error = true;
+                return;
+            } else {
+                var funcName:String = line.substring(0, firstParent).trim();
+                var args:Array<String> = line.substring(firstParent + 1, lastParent).split(",").map(function(arg:String):String {
+                    return arg.trim();
+                });
+
+                Log.debug("Function declared: " + funcName + " with arguments: " + args.join(", "));
+
+
+                insideFunction = true;
+
+                var body:Array<String> = [];
+                var bodyIndentLevel:Int = Utils.getIndentLevel(lines[index + 1]);
+
+                var bodyStartIndex:Int = index + 1;
+                while (bodyStartIndex < lines.length) {
+                    var bodyLine:String = lines[bodyStartIndex].trim();
+
+                    var indentLevel = Utils.getIndentLevel(lines[bodyStartIndex]);
+                    if (indentLevel <= 0) {
+                        break;
+                    }
+
+                    body.push(bodyLine);
+                    bodyStartIndex++;
+                }
+
+                variables.set(funcName, {
+                    args: args,
+                    body: body
+                });
+                Log.debug("Function body: " + body.join("\n"));
+            }
+        }
     }
 }

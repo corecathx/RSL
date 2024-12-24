@@ -110,4 +110,11 @@ class Utils {
     public inline static function hasOperator(c:String):Bool
         return c.contains("+") || c.contains("-") || c.contains("*") || c.contains("/");
 
+    public static function getIndentLevel(line:String):Int {
+        var count = 0;
+        while (line.charAt(count) == '\t') {
+            count++;
+        }
+        return count;
+    }
 }

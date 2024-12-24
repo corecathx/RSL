@@ -25,5 +25,5 @@ output "10 + 6 is $z, BTW."
 
 # Heheh.
 declare huh to beloved
-declare oh to Haxe
-output "$oh my $huh"
+declare oh to "Haxe my"
+output "$oh $huh"

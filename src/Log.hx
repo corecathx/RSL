@@ -16,7 +16,7 @@ class Log {
     }
 
     public inline static function output(data:LineReport) {
-        Sys.println("[RSL.OUTPUT] > " + data.message + " (line " + data.line + ")");
+        Sys.println("[RSL.OUTPUT] > " + data.message.trim() + " (line " + data.line + ")");
     }
 }
 

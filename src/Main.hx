@@ -5,6 +5,6 @@ class Main {
         Sys.setCwd("../root");
 
         var interp:Interp = new Interp();
-        interp.execute("test.rsl");
+        interp.execute("code.rsl");
     }
 }
