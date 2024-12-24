@@ -1,0 +1,29 @@
+# Random Scripting Language v0.1
+
+# Comments are defined by tags.
+
+# Variable declaration without double-quotes are valid:
+declare name to CoreCat # This creates variable `name` and sets the value to `CoreCat`.
+
+# Variable declaration with double-quotes are valid:
+declare greeting to "Hello world!" # This creates variable `greeting` and sets the value to `Hello world!`.
+
+# Example of an invalid variable declaration
+# declare hey to Oh look      # This won't work.
+
+# Just like it's name, it outputs text.
+output ">> RSL Test Script"
+
+# To output a variable's value, use $ symbol before the variable's name.
+output "$greeting I'm $name!" # This should outputs "Hello world! I'm CoreCat!"
+
+# RSL also supports math (obviously)
+declare x to 10
+declare y to 6
+declare z to $x + $y # This should returns 16.
+output "10 + 6 is $z, BTW."
+
+# Heheh.
+declare huh to beloved
+declare oh to Haxe
+output "$oh my $huh"
