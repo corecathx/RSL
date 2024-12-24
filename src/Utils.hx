@@ -5,7 +5,7 @@ package;
  */
 class Utils {
     public static function evalExp(expression:String, interp:Interp):Dynamic {
-        expression = interp.parseVariables(expression);
+        expression = interp.parseVariables(expression, 0);
     
         Log.debug("Evaluating: " + expression);
 

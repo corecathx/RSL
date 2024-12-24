@@ -7,12 +7,20 @@ import Log;
 class Interp {
     public var content:String = "";
     public var variables:Map<String, Dynamic> = [];
+    public var error:Bool = false;
 
     /**
      * Initialize a new Interp instance.
      */
     public function new() {
         // do something here later
+        setVar("system", {
+            name: Sys.systemName()
+        });
+    }
+
+    public function setVar(key:String, val:Dynamic) {
+        variables.set(key, val);
     }
 
     /**
@@ -29,9 +37,12 @@ class Interp {
             Sys.println((Sys.getCwd() + path) + " is a directory. ");
             return;
         }
+        error = false;
         var _file:String = File.getContent(path).trim();
         Log.debug(_file);
         for (index=>line in _file.split('\n')) {
+            if (error) 
+                break;
             line = line.trim();
             var commentIndex:Int = line.indexOf("#");
             if (commentIndex != -1)
@@ -41,78 +52,9 @@ class Interp {
                 continue;
 
             if (line.startsWith("declare")) { // a variable.
-                var parts:Array<String> = line.split(" ");
-                if (parts.length == 1) {
-                    Log.error({
-                        line: index+1, 
-                        message: "Attempted to declare a variable without identifier"
-                    });
-                    break;
-                } else if (parts.length == 2) {
-                    variables.set(parts[1], null);
-                    Log.debug("Append Variable // " + parts[1] + ': ' + variables.get(parts[1]));
-                } else if (parts.length == 3) {
-                    if (parts[2] == "to") {
-                        Log.error({
-                            line: index+1, 
-                            message: "Malformed variable declaration"
-                        });
-                    } else {
-                        Log.error({
-                            line: index+1, 
-                            message: "Invalid syntax \""+parts[2]+"\""
-                        });
-                    }
-                    break; 
-                } else if (parts.length >= 4) { 
-                    if (parts.length > 4) {
-                        var firstQuote:Int = line.indexOf("\"");
-                        var lastQuote:Int = line.lastIndexOf("\"");
-                        var filter:String = line.substring(firstQuote+1, lastQuote);
-                        if (firstQuote != lastQuote) {
-                            variables.set(parts[1], filter);
-                            Log.debug("Append Variable // " + parts[1] + ' -> ' + variables.get(parts[1]));
-                        } else if (Utils.hasOperator(parts.slice(3).join(" "))){
-                            var expression:String = parts.slice(3).join(" ");
-                            var evaluatedValue = Utils.evalExp(expression, this);
-                            if (evaluatedValue != null) {
-                                variables.set(parts[1], evaluatedValue);
-                                Log.debug("Append Variable // " + parts[1] + ' -> ' + variables.get(parts[1]));
-                            } else {
-                                Log.error({
-                                    line: index+1, 
-                                    message: "Invalid arithmetic expression"
-                                });
-                            }
-                        } else {
-                            Log.error({
-                                line: index+1, 
-                                message: "Malformed variable declaration"
-                            });
-                        }
-                    } else {
-                        variables.set(parts[1], parts[3]);
-                        Log.debug("Append Variable // " + parts[1] + ' -> ' + variables.get(parts[1]));
-                    }
-                }
+                handleDeclare(line, index);
             } else if (line.startsWith("output")) { // output, like print
-                var parsed:String = line.replace("output", "").trim();
-                var firstQuote:Int = parsed.indexOf("\"");
-                var lastQuote:Int = parsed.lastIndexOf("\"");
-                if (firstQuote != lastQuote) {
-                    parsed = parsed.substring(firstQuote+1, lastQuote);
-                } else {
-                    Log.error({
-                        line: index+1, 
-                        message: "Invalid output usage"
-                    });
-                    break;
-                }
-                parsed = parseVariables(parsed);
-                Log.output({
-                    line: index+1,
-                    message: parsed
-                });
+                handleOutput(line, index);
             } else if (line.startsWith("#")){ // comment
                 // we found a comment!
             } else if (line != "") { // anything, we call it invalid
@@ -126,9 +68,126 @@ class Interp {
         }
     }
 
-    public function parseVariables(string:String):String {
-        for (key in variables.keys())
-            string = string.replace("$"+key, Std.string(variables.get(key)));
+    public function parseVariables(string:String, index:Int):String {
+        for (key in variables.keys()) {
+            var regex:EReg = new EReg("\\$" + key + "(?:\\.[a-zA-Z_][a-zA-Z0-9_]*)*", "g");
+    
+            if (regex.match(string)) {
+                var m:String = regex.matched(0);
+                var match:Array<String> = m.substring(1,m.length).split(".");
+                var field:String = "";
+                for (i in 1...match.length) {
+                    field += '${match[i]}.';
+                }
+                field = field.substring(0, field.length-1);
+                try {
+                    if (!Reflect.hasField(variables.get(match[0]), field)) {
+                        Log.error({
+                            line: index+1, 
+                            message: "Unknown field \""+m+"\""
+                        });
+                        error = true;
+                        return string;
+                    } else {
+                        string = string.replace(m, Std.string(Reflect.getProperty(variables.get(match[0]), field)));
+                    }
+                    
+                } catch(e) {
+                    Log.error({
+                        line: index+1, 
+                        message: e.message
+                    });
+                    error = true;
+                    return string;
+                }
+            } else {
+                string = string.replace("$" + key, Std.string(variables.get(key)));
+            }
+
+        }
         return string;
+    }
+    
+
+    function handleDeclare(line:String, index:Int = 0) {
+        var parts:Array<String> = line.split(" ");
+        if (parts.length == 1) {
+            Log.error({
+                line: index+1, 
+                message: "Attempted to declare a variable without identifier"
+            });
+            error = true;
+            return;
+        } else if (parts.length == 2) {
+            variables.set(parts[1], null);
+            Log.debug("Append Variable // " + parts[1] + ': ' + variables.get(parts[1]));
+        } else if (parts.length == 3) {
+            if (parts[2] == "to") {
+                Log.error({
+                    line: index+1, 
+                    message: "Malformed variable declaration"
+                });
+            } else {
+                Log.error({
+                    line: index+1, 
+                    message: "Invalid syntax \""+parts[2]+"\""
+                });
+            }
+            error = true;
+            return;
+        } else if (parts.length >= 4) { 
+            if (parts.length > 4) {
+                var firstQuote:Int = line.indexOf("\"");
+                var lastQuote:Int = line.lastIndexOf("\"");
+                var filter:String = line.substring(firstQuote+1, lastQuote);
+                if (firstQuote != lastQuote) {
+                    variables.set(parts[1], filter);
+                    Log.debug("Append Variable // " + parts[1] + ' -> ' + variables.get(parts[1]));
+                } else if (Utils.hasOperator(parts.slice(3).join(" "))){
+                    var expression:String = parts.slice(3).join(" ");
+                    var evaluatedValue = Utils.evalExp(expression, this);
+                    if (evaluatedValue != null) {
+                        variables.set(parts[1], evaluatedValue);
+                        Log.debug("Append Variable // " + parts[1] + ' -> ' + variables.get(parts[1]));
+                    } else {
+                        Log.error({
+                            line: index+1, 
+                            message: "Invalid arithmetic expression"
+                        });
+                        return;
+                    }
+                } else {
+                    Log.error({
+                        line: index+1, 
+                        message: "Malformed variable declaration"
+                    });
+                    return;
+                }
+            } else {
+                variables.set(parts[1], parts[3]);
+                Log.debug("Append Variable // " + parts[1] + ' -> ' + variables.get(parts[1]));
+            }
+        }
+    }
+
+    function handleOutput(line:String, index:Int = 0) {
+        var parsed:String = line.replace("output", "").trim();
+        var firstQuote:Int = parsed.indexOf("\"");
+        var lastQuote:Int = parsed.lastIndexOf("\"");
+        if (firstQuote != lastQuote) {
+            parsed = parsed.substring(firstQuote+1, lastQuote);
+        } else {
+            Log.error({
+                line: index+1, 
+                message: "Invalid output usage"
+            });
+            error = true;
+            return;
+        }
+        parsed = parseVariables(parsed, index);
+        Log.output({
+            line: index+1,
+            message: parsed
+        });
     }
 }
